@@ -188,14 +188,14 @@ class TestConnectionGoingAwayException:
 # =============================================================================
 
 
-@pytest.mark.anyio
-async def test_http2_goaway_non_graceful_shutdown():
+
+def test_http2_goaway_non_graceful_shutdown():
     """
     Non-graceful shutdown (error_code != 0) should raise ConnectionGoingAway
     with is_graceful_shutdown=False.
     """
     origin = httpcore.Origin(b"https", b"example.com", 443)
-    stream = httpcore.AsyncMockStream(
+    stream = httpcore.MockStream(
         [
             hyperframe.frame.SettingsFrame().serialize(),
             hyperframe.frame.HeadersFrame(
@@ -215,26 +215,26 @@ async def test_http2_goaway_non_graceful_shutdown():
             b"",
         ]
     )
-    async with httpcore.AsyncHTTP2Connection(
+    with httpcore.HTTP2Connection(
         origin=origin, stream=stream, keepalive_expiry=5.0
     ) as conn:
         # First request should fail with ConnectionGoingAway due to non-graceful GOAWAY
         with pytest.raises(httpcore.ConnectionGoingAway) as exc_info:
-            await conn.request("GET", "https://example.com/")
+            conn.request("GET", "https://example.com/")
 
         # Verify it's not a graceful shutdown
         assert exc_info.value.is_graceful_shutdown is False
         assert exc_info.value.error_code == 1
 
 
-@pytest.mark.anyio
-async def test_http2_goaway_graceful_shutdown_properties():
+
+def test_http2_goaway_graceful_shutdown_properties():
     """
     When GOAWAY with NO_ERROR is received, the exception should have
     is_graceful_shutdown=True.
     """
     origin = httpcore.Origin(b"https", b"example.com", 443)
-    stream = httpcore.AsyncMockStream(
+    stream = httpcore.MockStream(
         [
             hyperframe.frame.SettingsFrame().serialize(),
             hyperframe.frame.HeadersFrame(
@@ -254,26 +254,26 @@ async def test_http2_goaway_graceful_shutdown_properties():
             b"",
         ]
     )
-    async with httpcore.AsyncHTTP2Connection(
+    with httpcore.HTTP2Connection(
         origin=origin, stream=stream, keepalive_expiry=5.0
     ) as conn:
         # Request should raise ConnectionGoingAway since GOAWAY is received
         with pytest.raises(httpcore.ConnectionGoingAway) as exc_info:
-            await conn.request("GET", "https://example.com/")
+            conn.request("GET", "https://example.com/")
 
         # Should be a graceful shutdown
         assert exc_info.value.is_graceful_shutdown is True
         assert exc_info.value.error_code == 0
 
 
-@pytest.mark.anyio
-async def test_http2_goaway_stream_id_greater_than_last_stream_id():
+
+def test_http2_goaway_stream_id_greater_than_last_stream_id():
     """
     When stream_id > last_stream_id, the request is guaranteed unprocessed
     and should raise ConnectionGoingAway with is_safe_to_retry=True.
     """
     origin = httpcore.Origin(b"https", b"example.com", 443)
-    stream = httpcore.AsyncMockStream(
+    stream = httpcore.MockStream(
         [
             hyperframe.frame.SettingsFrame().serialize(),
             # GOAWAY with last_stream_id=0 before any streams were processed
@@ -283,11 +283,11 @@ async def test_http2_goaway_stream_id_greater_than_last_stream_id():
             b"",
         ]
     )
-    async with httpcore.AsyncHTTP2Connection(
+    with httpcore.HTTP2Connection(
         origin=origin, stream=stream, keepalive_expiry=5.0
     ) as conn:
         with pytest.raises(httpcore.ConnectionGoingAway) as exc_info:
-            await conn.request("GET", "https://example.com/")
+            conn.request("GET", "https://example.com/")
 
         # Stream 1 > last_stream_id (0), so safe to retry
         assert exc_info.value.request_stream_id == 1
@@ -295,14 +295,14 @@ async def test_http2_goaway_stream_id_greater_than_last_stream_id():
         assert exc_info.value.is_safe_to_retry is True
 
 
-@pytest.mark.anyio
-async def test_http2_goaway_stream_id_less_than_or_equal_to_last_stream_id():
+
+def test_http2_goaway_stream_id_less_than_or_equal_to_last_stream_id():
     """
     When stream_id <= last_stream_id and connection is not DRAINING,
     the request may have been processed and should raise ConnectionGoingAway.
     """
     origin = httpcore.Origin(b"https", b"example.com", 443)
-    stream = httpcore.AsyncMockStream(
+    stream = httpcore.MockStream(
         [
             hyperframe.frame.SettingsFrame().serialize(),
             hyperframe.frame.HeadersFrame(
@@ -323,11 +323,11 @@ async def test_http2_goaway_stream_id_less_than_or_equal_to_last_stream_id():
             b"",
         ]
     )
-    async with httpcore.AsyncHTTP2Connection(
+    with httpcore.HTTP2Connection(
         origin=origin, stream=stream, keepalive_expiry=5.0
     ) as conn:
         with pytest.raises(httpcore.ConnectionGoingAway) as exc_info:
-            await conn.request("GET", "https://example.com/")
+            conn.request("GET", "https://example.com/")
 
         # Stream 1 <= last_stream_id (1), NOT safe to retry
         assert exc_info.value.request_stream_id == 1
@@ -335,14 +335,14 @@ async def test_http2_goaway_stream_id_less_than_or_equal_to_last_stream_id():
         assert exc_info.value.is_safe_to_retry is False
 
 
-@pytest.mark.anyio
-async def test_http2_server_disconnect_after_goaway():
+
+def test_http2_server_disconnect_after_goaway():
     """
     When server disconnects after sending GOAWAY, the exception should
     include GOAWAY context.
     """
     origin = httpcore.Origin(b"https", b"example.com", 443)
-    stream = httpcore.AsyncMockStream(
+    stream = httpcore.MockStream(
         [
             hyperframe.frame.SettingsFrame().serialize(),
             # GOAWAY followed immediately by disconnect
@@ -352,24 +352,24 @@ async def test_http2_server_disconnect_after_goaway():
             b"",  # Server disconnect
         ]
     )
-    async with httpcore.AsyncHTTP2Connection(
+    with httpcore.HTTP2Connection(
         origin=origin, stream=stream, keepalive_expiry=5.0
     ) as conn:
         with pytest.raises(httpcore.ConnectionGoingAway) as exc_info:
-            await conn.request("GET", "https://example.com/")
+            conn.request("GET", "https://example.com/")
 
         # Should include GOAWAY context
         assert exc_info.value.last_stream_id == 0
         assert exc_info.value.is_graceful_shutdown is True
 
 
-@pytest.mark.anyio
-async def test_http2_tracks_request_phase_headers_sent():
+
+def test_http2_tracks_request_phase_headers_sent():
     """
     The connection should track when headers have been sent for GOAWAY context.
     """
     origin = httpcore.Origin(b"https", b"example.com", 443)
-    stream = httpcore.AsyncMockStream(
+    stream = httpcore.MockStream(
         [
             hyperframe.frame.SettingsFrame().serialize(),
             # GOAWAY after headers would be sent but before response
@@ -379,23 +379,23 @@ async def test_http2_tracks_request_phase_headers_sent():
             b"",
         ]
     )
-    async with httpcore.AsyncHTTP2Connection(
+    with httpcore.HTTP2Connection(
         origin=origin, stream=stream, keepalive_expiry=5.0
     ) as conn:
         with pytest.raises(httpcore.ConnectionGoingAway) as exc_info:
-            await conn.request("GET", "https://example.com/")
+            conn.request("GET", "https://example.com/")
 
         # Headers should have been sent
         assert exc_info.value.headers_sent is True
 
 
-@pytest.mark.anyio
-async def test_http2_tracks_request_phase_body_sent():
+
+def test_http2_tracks_request_phase_body_sent():
     """
     The connection should track when body has been sent for GOAWAY context.
     """
     origin = httpcore.Origin(b"https", b"example.com", 443)
-    stream = httpcore.AsyncMockStream(
+    stream = httpcore.MockStream(
         [
             hyperframe.frame.SettingsFrame().serialize(),
             # GOAWAY after body would be sent but before response
@@ -405,11 +405,11 @@ async def test_http2_tracks_request_phase_body_sent():
             b"",
         ]
     )
-    async with httpcore.AsyncHTTP2Connection(
+    with httpcore.HTTP2Connection(
         origin=origin, stream=stream, keepalive_expiry=5.0
     ) as conn:
         with pytest.raises(httpcore.ConnectionGoingAway) as exc_info:
-            await conn.request(
+            conn.request(
                 "POST",
                 "https://example.com/",
                 headers={b"content-length": b"11"},
@@ -420,14 +420,14 @@ async def test_http2_tracks_request_phase_body_sent():
         assert exc_info.value.body_sent is True
 
 
-@pytest.mark.anyio
-async def test_http2_draining_connection_goaway_after_complete_response():
+
+def test_http2_draining_connection_goaway_after_complete_response():
     """
     When GOAWAY is sent after a complete response, the first request succeeds.
     The GOAWAY is only discovered on the next request attempt, which then fails.
     """
     origin = httpcore.Origin(b"https", b"example.com", 443)
-    stream = httpcore.AsyncMockStream(
+    stream = httpcore.MockStream(
         [
             hyperframe.frame.SettingsFrame().serialize(),
             hyperframe.frame.HeadersFrame(
@@ -450,11 +450,11 @@ async def test_http2_draining_connection_goaway_after_complete_response():
             b"",  # Disconnect after GOAWAY
         ]
     )
-    async with httpcore.AsyncHTTP2Connection(
+    with httpcore.HTTP2Connection(
         origin=origin, stream=stream, keepalive_expiry=5.0
     ) as conn:
         # First request should complete successfully
-        response = await conn.request("GET", "https://example.com/")
+        response = conn.request("GET", "https://example.com/")
         assert response.status == 200
         assert response.content == b"Hello, world!"
 
@@ -462,7 +462,7 @@ async def test_http2_draining_connection_goaway_after_complete_response():
         # (it comes after the complete response)
         # Second request attempts to use the connection and discovers GOAWAY
         with pytest.raises(httpcore.ConnectionGoingAway) as exc_info:
-            await conn.request("GET", "https://example.com/")
+            conn.request("GET", "https://example.com/")
 
         # The second request (stream 3) > last_stream_id (1), so safe to retry
         assert exc_info.value.is_safe_to_retry is True
@@ -473,7 +473,7 @@ async def test_http2_draining_connection_goaway_after_complete_response():
 # =============================================================================
 
 
-class AsyncMockBackendWithRetry(httpcore.AsyncMockBackend):
+class MockBackendWithRetry(httpcore.MockBackend):
     """A mock backend that returns different data for each connection."""
 
     def __init__(self, buffers_by_connection: list[list[bytes]], http2: bool = False):
@@ -482,20 +482,20 @@ class AsyncMockBackendWithRetry(httpcore.AsyncMockBackend):
         self._http2 = http2
         super().__init__([], http2=http2)
 
-    async def connect_tcp(
+    def connect_tcp(
         self,
         host: str,
         port: int,
         timeout: float | None = None,
         local_address: str | None = None,
         socket_options: Any = None,
-    ) -> httpcore.AsyncMockStream:
+    ) -> httpcore.MockStream:
         if self._connection_index < len(self._all_buffers):
             buffer = list(self._all_buffers[self._connection_index])
             self._connection_index += 1
         else:
             buffer = []
-        return httpcore.AsyncMockStream(buffer, http2=self._http2)
+        return httpcore.MockStream(buffer, http2=self._http2)
 
 
 # =============================================================================
@@ -503,13 +503,13 @@ class AsyncMockBackendWithRetry(httpcore.AsyncMockBackend):
 # =============================================================================
 
 
-@pytest.mark.anyio
-async def test_connection_pool_retries_when_safe_to_retry():
+
+def test_connection_pool_retries_when_safe_to_retry():
     """
     Connection pool should automatically retry when is_safe_to_retry is True
     (stream_id > last_stream_id, guaranteed unprocessed).
     """
-    network_backend = AsyncMockBackendWithRetry(
+    network_backend = MockBackendWithRetry(
         buffers_by_connection=[
             # First connection: GOAWAY with last_stream_id=0 (stream 1 > 0, safe to retry)
             [
@@ -540,22 +540,22 @@ async def test_connection_pool_retries_when_safe_to_retry():
         http2=True,
     )
 
-    async with httpcore.AsyncConnectionPool(
+    with httpcore.ConnectionPool(
         network_backend=network_backend,
     ) as pool:
         # Request should succeed after automatic retry
-        response = await pool.request("GET", "https://example.com/")
+        response = pool.request("GET", "https://example.com/")
         assert response.status == 200
         assert response.content == b"Hello, world!"
 
 
-@pytest.mark.anyio
-async def test_connection_pool_retries_graceful_no_side_effects():
+
+def test_connection_pool_retries_graceful_no_side_effects():
     """
     Connection pool should retry when is_graceful_shutdown is True
     AND may_have_side_effects is False (headers not sent yet, stream > last_stream).
     """
-    network_backend = AsyncMockBackendWithRetry(
+    network_backend = MockBackendWithRetry(
         buffers_by_connection=[
             # First connection: Graceful GOAWAY with last_stream_id=0
             # stream 1 > 0, so safe to retry
@@ -587,21 +587,21 @@ async def test_connection_pool_retries_graceful_no_side_effects():
         http2=True,
     )
 
-    async with httpcore.AsyncConnectionPool(
+    with httpcore.ConnectionPool(
         network_backend=network_backend,
     ) as pool:
-        response = await pool.request("GET", "https://example.com/")
+        response = pool.request("GET", "https://example.com/")
         assert response.status == 200
         assert response.content == b"Success!"
 
 
-@pytest.mark.anyio
-async def test_connection_pool_raises_when_not_safe_to_retry():
+
+def test_connection_pool_raises_when_not_safe_to_retry():
     """
     Connection pool should raise RemoteProtocolError when is_safe_to_retry is False
     and the request may have been processed.
     """
-    network_backend = AsyncMockBackendWithRetry(
+    network_backend = MockBackendWithRetry(
         buffers_by_connection=[
             # First connection: GOAWAY with last_stream_id=1 (stream 1 <= 1, not safe)
             # Non-graceful shutdown (error_code=1)
@@ -616,23 +616,23 @@ async def test_connection_pool_raises_when_not_safe_to_retry():
         http2=True,
     )
 
-    async with httpcore.AsyncConnectionPool(
+    with httpcore.ConnectionPool(
         network_backend=network_backend,
     ) as pool:
         with pytest.raises(httpcore.RemoteProtocolError) as exc_info:
-            await pool.request("GET", "https://example.com/")
+            pool.request("GET", "https://example.com/")
 
         # Verify the error message indicates GOAWAY was received
         assert "GOAWAY" in str(exc_info.value)
 
 
-@pytest.mark.anyio
-async def test_connection_pool_raises_when_may_have_side_effects():
+
+def test_connection_pool_raises_when_may_have_side_effects():
     """
     Connection pool should raise RemoteProtocolError when graceful shutdown
     but request may have had side effects (headers sent, stream <= last_stream_id).
     """
-    network_backend = AsyncMockBackendWithRetry(
+    network_backend = MockBackendWithRetry(
         buffers_by_connection=[
             # First connection: Graceful GOAWAY with last_stream_id=1
             # Headers were sent, may have side effects
@@ -647,11 +647,11 @@ async def test_connection_pool_raises_when_may_have_side_effects():
         http2=True,
     )
 
-    async with httpcore.AsyncConnectionPool(
+    with httpcore.ConnectionPool(
         network_backend=network_backend,
     ) as pool:
         with pytest.raises(httpcore.RemoteProtocolError) as exc_info:
-            await pool.request("GET", "https://example.com/")
+            pool.request("GET", "https://example.com/")
 
         # Verify the error message indicates GOAWAY was received
         assert "GOAWAY" in str(exc_info.value)
@@ -662,14 +662,14 @@ async def test_connection_pool_raises_when_may_have_side_effects():
 # =============================================================================
 
 
-@pytest.mark.anyio
-async def test_http2_goaway_receive_events_with_terminated_connection():
+
+def test_http2_goaway_receive_events_with_terminated_connection():
     """
     Test the _receive_events code path when connection is already terminated.
     This covers the case where stream_id <= last_stream_id.
     """
     origin = httpcore.Origin(b"https", b"example.com", 443)
-    stream = httpcore.AsyncMockStream(
+    stream = httpcore.MockStream(
         [
             hyperframe.frame.SettingsFrame().serialize(),
             hyperframe.frame.HeadersFrame(
@@ -690,11 +690,11 @@ async def test_http2_goaway_receive_events_with_terminated_connection():
             b"",
         ]
     )
-    async with httpcore.AsyncHTTP2Connection(
+    with httpcore.HTTP2Connection(
         origin=origin, stream=stream, keepalive_expiry=5.0
     ) as conn:
         with pytest.raises(httpcore.ConnectionGoingAway) as exc_info:
-            await conn.request("GET", "https://example.com/")
+            conn.request("GET", "https://example.com/")
 
         # Stream 1 <= last_stream_id (5), NOT safe to retry
         assert exc_info.value.request_stream_id == 1
@@ -702,14 +702,14 @@ async def test_http2_goaway_receive_events_with_terminated_connection():
         assert exc_info.value.is_safe_to_retry is False
 
 
-@pytest.mark.anyio
-async def test_http2_goaway_connection_closed_after_graceful_goaway():
+
+def test_http2_goaway_connection_closed_after_graceful_goaway():
     """
     Test that connection is properly closed after handling graceful GOAWAY
     when the request fails (due to server disconnect after GOAWAY).
     """
     origin = httpcore.Origin(b"https", b"example.com", 443)
-    stream = httpcore.AsyncMockStream(
+    stream = httpcore.MockStream(
         [
             hyperframe.frame.SettingsFrame().serialize(),
             hyperframe.frame.HeadersFrame(
@@ -728,11 +728,11 @@ async def test_http2_goaway_connection_closed_after_graceful_goaway():
             b"",
         ]
     )
-    async with httpcore.AsyncHTTP2Connection(
+    with httpcore.HTTP2Connection(
         origin=origin, stream=stream, keepalive_expiry=5.0
     ) as conn:
         with pytest.raises(httpcore.ConnectionGoingAway):
-            await conn.request("GET", "https://example.com/")
+            conn.request("GET", "https://example.com/")
 
         # After exception handling cleanup, connection should be closed
         assert conn.is_closed()
@@ -743,7 +743,7 @@ async def test_http2_goaway_connection_closed_after_graceful_goaway():
 # =============================================================================
 
 
-class MockConnectionGracefulGoaway(httpcore.AsyncConnectionInterface):
+class MockConnectionGracefulGoaway(httpcore.ConnectionInterface):
     """
     Mock connection that raises ConnectionGoingAway with specific properties
     to test the graceful shutdown + no side effects retry path.
@@ -768,7 +768,7 @@ class MockConnectionGracefulGoaway(httpcore.AsyncConnectionInterface):
     def has_expired(self) -> bool:
         return False
 
-    async def handle_async_request(
+    def handle_request(
         self, request: httpcore.Request
     ) -> httpcore.Response:
         self._calls += 1
@@ -788,15 +788,15 @@ class MockConnectionGracefulGoaway(httpcore.AsyncConnectionInterface):
             )
         return httpcore.Response(200, content=b"Success after retry!")
 
-    async def aclose(self) -> None:
+    def close(self) -> None:
         pass
 
     def info(self) -> str:
         return "MockConnectionGracefulGoaway"
 
 
-@pytest.mark.anyio
-async def test_connection_pool_retries_graceful_shutdown_no_headers_sent():
+
+def test_connection_pool_retries_graceful_shutdown_no_headers_sent():
     """
     Test the pool retry path where:
     - is_safe_to_retry = False (stream_id <= last_stream_id)
@@ -807,7 +807,7 @@ async def test_connection_pool_retries_graceful_shutdown_no_headers_sent():
     """
 
     # Create a custom pool that returns our mock connection
-    class TestPool(httpcore.AsyncConnectionPool):
+    class TestPool(httpcore.ConnectionPool):
         def __init__(self) -> None:
             super().__init__()
             self._mock_connections: list[MockConnectionGracefulGoaway] = []
@@ -819,8 +819,8 @@ async def test_connection_pool_retries_graceful_shutdown_no_headers_sent():
             self._mock_connections.append(conn)
             return conn
 
-    async with TestPool() as pool:
-        response = await pool.request("GET", "https://example.com/")
+    with TestPool() as pool:
+        response = pool.request("GET", "https://example.com/")
         assert response.status == 200
         assert response.content == b"Success after retry!"
 
