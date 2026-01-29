@@ -195,7 +195,10 @@ class AsyncHTTP2Connection(AsyncConnectionInterface):
                 if self._connection_terminated:  # pragma: nocover
                     phase = self._stream_requests.get(
                         stream_id,
-                        {"headers_sent": False, "body_sent": False},
+                        {
+                            "headers_sent": False,
+                            "body_sent": False,
+                        },
                     )
                     raise ConnectionGoingAway(
                         self._connection_terminated,  # type: ignore[arg-type]
@@ -213,7 +216,10 @@ class AsyncHTTP2Connection(AsyncConnectionInterface):
                 ):
                     phase = self._stream_requests.get(
                         stream_id,
-                        {"headers_sent": False, "body_sent": False},
+                        {
+                            "headers_sent": False,
+                            "body_sent": False,
+                        },
                     )
                     msg = f"Connection closed: {exc}"
                     raise ConnectionGoingAway(
@@ -396,7 +402,11 @@ class AsyncHTTP2Connection(AsyncConnectionInterface):
                 last_stream_id = self._connection_terminated.last_stream_id
                 if stream_id is not None:
                     phase = self._stream_requests.get(
-                        stream_id, {"headers_sent": False, "body_sent": False}
+                        stream_id,
+                        {
+                            "headers_sent": False,
+                            "body_sent": False,
+                        },
                     )
                     if last_stream_id is not None and stream_id > last_stream_id:
                         # stream_id > last_stream_id: guaranteed unprocessed, safe to retry
@@ -523,7 +533,11 @@ class AsyncHTTP2Connection(AsyncConnectionInterface):
                 # Server disconnected. Check if this is related to GOAWAY.
                 if stream_id is not None:
                     phase = self._stream_requests.get(
-                        stream_id, {"headers_sent": False, "body_sent": False}
+                        stream_id,
+                        {
+                            "headers_sent": False,
+                            "body_sent": False,
+                        },
                     )
                     # If we have a GOAWAY recorded, this disconnect is GOAWAY-related
                     if self._connection_terminated is not None:

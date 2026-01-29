@@ -89,7 +89,6 @@ class HTTP2Connection(ConnectionInterface):
         # TODO: Consider shifting this to a dataclass or typeddict
         self._stream_requests: dict[int, dict[str, bool]] = {}
 
-
     def handle_request(self, request: Request) -> Response:
         if not self.can_handle_request(request.url.origin):
             # This cannot occur in normal operation, since the connection pool
@@ -142,7 +141,10 @@ class HTTP2Connection(ConnectionInterface):
             stream_id = self._h2_state.get_next_available_stream_id()
             self._events[stream_id] = []
             # Initialize phase tracking for this stream
-            self._stream_requests[stream_id] = {"headers_sent": False, "body_sent": False}
+            self._stream_requests[stream_id] = {
+                "headers_sent": False,
+                "body_sent": False,
+            }
         except h2.exceptions.NoAvailableStreamIDError:  # pragma: nocover
             self._used_all_stream_ids = True
             self._request_count -= 1
@@ -192,7 +194,11 @@ class HTTP2Connection(ConnectionInterface):
                 # it as a ConnectionGoingAway if applicable, or RemoteProtocolError.
                 if self._connection_terminated:  # pragma: nocover
                     phase = self._stream_requests.get(
-                        stream_id, {"headers_sent": False, "body_sent": False},
+                        stream_id,
+                        {
+                            "headers_sent": False,
+                            "body_sent": False,
+                        },
                     )
                     raise ConnectionGoingAway(
                         self._connection_terminated,  # type: ignore[arg-type]
@@ -204,15 +210,22 @@ class HTTP2Connection(ConnectionInterface):
                     )
                 # Check if h2 is in CLOSED state due to GOAWAY. This can happen when
                 # GOAWAY was recieved but we haven't processed the event yet (race condition).
-                if self._h2_state.state_machine.state == h2.connection.ConnectionState.CLOSED:
+                if (
+                    self._h2_state.state_machine.state
+                    == h2.connection.ConnectionState.CLOSED
+                ):
                     phase = self._stream_requests.get(
-                        stream_id, {"headers_sent": False, "body_sent": False},
+                        stream_id,
+                        {
+                            "headers_sent": False,
+                            "body_sent": False,
+                        },
                     )
                     msg = f"Connection closed: {exc}"
                     raise ConnectionGoingAway(
                         msg,
-                        last_stream_id=stream_id, # Conservative: assume this stream may have been processed
-                        error_code=0, # Assume graceful shutdown
+                        last_stream_id=stream_id,  # Conservative: assume this stream may have been processed
+                        error_code=0,  # Assume graceful shutdown
                         request_stream_id=stream_id,
                         headers_sent=phase["headers_sent"],
                         body_sent=phase["body_sent"],
@@ -389,7 +402,11 @@ class HTTP2Connection(ConnectionInterface):
                 last_stream_id = self._connection_terminated.last_stream_id
                 if stream_id is not None:
                     phase = self._stream_requests.get(
-                        stream_id, {"headers_sent": False, "body_sent": False}
+                        stream_id,
+                        {
+                            "headers_sent": False,
+                            "body_sent": False,
+                        },
                     )
                     if last_stream_id is not None and stream_id > last_stream_id:
                         # stream_id > last_stream_id: guaranteed unprocessed, safe to retry
@@ -402,11 +419,13 @@ class HTTP2Connection(ConnectionInterface):
                             headers_sent=phase["headers_sent"],
                             body_sent=phase["body_sent"],
                         )
-                    # stream_id <= last_stream_id: may have been processed
                     if self._state != HTTPConnectionState.DRAINING:
+                        # stream_id <= last_stream_id: may have been processed
                         raise ConnectionGoingAway(
                             f"GOAWAY received: stream {stream_id} <= last_stream_id {last_stream_id}",
-                            last_stream_id=last_stream_id if last_stream_id is not None else 0,
+                            last_stream_id=last_stream_id
+                            if last_stream_id is not None
+                            else 0,
                             error_code=self._connection_terminated.error_code,  # type: ignore[arg-type]
                             request_stream_id=stream_id,
                             headers_sent=phase["headers_sent"],
@@ -477,7 +496,7 @@ class HTTP2Connection(ConnectionInterface):
     def _response_closed(self, stream_id: int) -> None:
         self._max_streams_semaphore.release()
         del self._events[stream_id]
-        self._stream_requests.pop(stream_id, None)  # Clean up phase tracking        
+        self._stream_requests.pop(stream_id, None)  # Clean up phase tracking
         with self._state_lock:
             if self._connection_terminated and not self._events:
                 self.close()
@@ -514,7 +533,11 @@ class HTTP2Connection(ConnectionInterface):
                 # Server disconnected. Check if this is related to GOAWAY.
                 if stream_id is not None:
                     phase = self._stream_requests.get(
-                        stream_id, {"headers_sent": False, "body_sent": False}
+                        stream_id,
+                        {
+                            "headers_sent": False,
+                            "body_sent": False,
+                        },
                     )
                     # If we have a GOAWAY recorded, this disconnect is GOAWAY-related
                     if self._connection_terminated is not None:
@@ -522,13 +545,16 @@ class HTTP2Connection(ConnectionInterface):
                         raise ConnectionGoingAway(
                             "Server disconnected after GOAWAY",
                             last_stream_id=last_stream_id if last_stream_id else 0,
-                            error_code=self._connection_terminated.error_code,   # type: ignore[arg-type]
+                            error_code=self._connection_terminated.error_code,  # type: ignore[arg-type]
                             request_stream_id=stream_id,
                             headers_sent=phase["headers_sent"],
                             body_sent=phase["body_sent"],
                         )
                     # Check if h2 is in CLOSED state (GOAWAY received but not processed)
-                    if self._h2_state.state_machine.state == h2.connection.ConnectionState.CLOSED:
+                    if (
+                        self._h2_state.state_machine.state
+                        == h2.connection.ConnectionState.CLOSED
+                    ):
                         raise ConnectionGoingAway(
                             "Server disconnected (connection closed)",
                             last_stream_id=stream_id,  # Conservative
@@ -607,7 +633,8 @@ class HTTP2Connection(ConnectionInterface):
 
     def is_available(self) -> bool:
         return (
-            self._state not in (HTTPConnectionState.DRAINING, HTTPConnectionState.CLOSED)
+            self._state
+            not in (HTTPConnectionState.DRAINING, HTTPConnectionState.CLOSED)
             and not self._connection_error
             and not self._used_all_stream_ids
             and not (
