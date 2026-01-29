@@ -549,6 +549,7 @@ class AsyncHTTP2Connection(AsyncConnectionInterface):
                             headers_sent=phase["headers_sent"],
                             body_sent=phase["body_sent"],
                         )
+                raise RemoteProtocolError("Server disconnected")
         except Exception as exc:
             # If we get a network error we should:
             #
