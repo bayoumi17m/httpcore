@@ -241,13 +241,10 @@ class ConnectionPool(RequestInterface):
                     response = connection.handle_request(
                         pool_request.request
                     )
-                except ConnectionNotAvailable:
-                    # In some cases a connection may initially be available to
-                    # handle a request, but then become unavailable.
-                    #
-                    # In this case we clear the connection and try again.
-                    pool_request.clear_connection()
                 except ConnectionGoingAway as exc:
+                    # NOTE: This must be caught before ConnectionNotAvailable since
+                    # ConnectionGoingAway is a subclass of ConnectionNotAvailable.
+                    #
                     # GOAWAY frame recieved during request processing.
                     # Determine if we can safely retry based on RFC 7540 semantics.
                     pool_request.clear_connection()
@@ -266,6 +263,12 @@ class ConnectionPool(RequestInterface):
                         msg = "GOAWAY recieved: request may have been processed"
                         # QUESTION: What is the best way to propagate the context for the applications?
                         raise RemoteProtocolError(msg) from exc
+                except ConnectionNotAvailable:
+                    # In some cases a connection may initially be available to
+                    # handle a request, but then become unavailable.
+                    #
+                    # In this case we clear the connection and try again.
+                    pool_request.clear_connection()
                 else:
                     break  # pragma: nocover
 
