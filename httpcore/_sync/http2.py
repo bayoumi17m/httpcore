@@ -522,7 +522,7 @@ class HTTP2Connection(ConnectionInterface):
                         raise ConnectionGoingAway(
                             "Server disconnected after GOAWAY",
                             last_stream_id=last_stream_id if last_stream_id else 0,
-                            error_code=self._connection_terminated.error_code,
+                            error_code=self._connection_terminated.error_code,   # type: ignore[arg-type]
                             request_stream_id=stream_id,
                             headers_sent=phase["headers_sent"],
                             body_sent=phase["body_sent"],
