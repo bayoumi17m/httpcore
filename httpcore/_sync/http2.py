@@ -195,9 +195,9 @@ class HTTP2Connection(ConnectionInterface):
                         stream_id, {"headers_sent": False, "body_sent": False},
                     )
                     raise ConnectionGoingAway(
-                        self._connection_terminated,
-                        last_stream_id=self._connection_terminated.last_stream_id,
-                        error_code=self._connection_terminated.error_code,
+                        self._connection_terminated, # type: ignore[arg-type]
+                        last_stream_id=self._connection_terminated.last_stream_id, # type: ignore[arg-type]
+                        error_code=self._connection_terminated.error_code, # type: ignore[arg-type]
                         request_stream_id=stream_id,
                         headers_sent=phase["headers_sent"],
                         body_sent=phase["body_sent"],
@@ -397,7 +397,7 @@ class HTTP2Connection(ConnectionInterface):
                         raise ConnectionGoingAway(
                             f"GOAWAY received: stream {stream_id} > last_stream_id {last_stream_id}",
                             last_stream_id=last_stream_id,
-                            error_code=self._connection_terminated.error_code,
+                            error_code=self._connection_terminated.error_code, # type: ignore[arg-type]
                             request_stream_id=stream_id,
                             headers_sent=phase["headers_sent"],
                             body_sent=phase["body_sent"],
@@ -407,7 +407,7 @@ class HTTP2Connection(ConnectionInterface):
                         raise ConnectionGoingAway(
                             f"GOAWAY received: stream {stream_id} <= last_stream_id {last_stream_id}",
                             last_stream_id=last_stream_id if last_stream_id is not None else 0,
-                            error_code=self._connection_terminated.error_code,
+                            error_code=self._connection_terminated.error_code, # type: ignore[arg-type]
                             request_stream_id=stream_id,
                             headers_sent=phase["headers_sent"],
                             body_sent=phase["body_sent"],
