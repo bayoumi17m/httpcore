@@ -262,9 +262,7 @@ class AsyncConnectionPool(AsyncRequestInterface):
                         continue
                     else:
                         # Request may have been processed. Propagate error with context so application can decide whether to retry.
-                        msg = (
-                            "GOAWAY recieved: request may have been processed"
-                        )
+                        msg = "GOAWAY recieved: request may have been processed"
                         # QUESTION: What is the best way to propagate the context for the applications?
                         raise RemoteProtocolError(msg) from exc
                 else:
