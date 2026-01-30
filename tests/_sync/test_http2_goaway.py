@@ -996,6 +996,7 @@ def test_http2_protocol_error_with_h2_closed_state():
         assert exc_info.value.error_code == 0  # Assumed graceful
 
 
+
 def test_mock_backend_with_retry_exhausted_buffers():
     """
     Test the MockBackendWithRetry when more connections are made
@@ -1022,6 +1023,7 @@ def test_mock_backend_with_retry_exhausted_buffers():
     # Second connection should hit the else branch (empty buffer)
     stream2 = network_backend.connect_tcp("example.com", 443)
     assert stream2 is not None
+
 
 
 def test_mock_connection_graceful_goaway_info():
