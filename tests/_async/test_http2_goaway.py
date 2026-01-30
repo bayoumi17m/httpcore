@@ -891,7 +891,7 @@ async def test_http2_server_disconnect_with_h2_closed_state():
     # Create a mock stream that sets state to CLOSED BEFORE returning empty data
     # This simulates the race condition accurately
     class MockStreamWithClosedStateOnDisconnect(httpcore.AsyncMockStream):
-        def __init__(self, conn_ref: list) -> None:
+        def __init__(self, conn_ref: list[Any]) -> None:
             self._conn_ref = conn_ref
             self._read_count = 0
             super().__init__([hyperframe.frame.SettingsFrame().serialize()], http2=True)
@@ -900,7 +900,7 @@ async def test_http2_server_disconnect_with_h2_closed_state():
             self._read_count += 1
             if self._read_count == 1:
                 # First read returns settings
-                return hyperframe.frame.SettingsFrame().serialize()
+                return bytes(hyperframe.frame.SettingsFrame().serialize())
             # Before returning empty (disconnect), set h2 state to CLOSED
             # This simulates h2 having processed GOAWAY internally
             if self._conn_ref and self._conn_ref[0]:
@@ -910,7 +910,7 @@ async def test_http2_server_disconnect_with_h2_closed_state():
                 self._conn_ref[0]._connection_terminated = None
             return b""  # Server disconnect
 
-    conn_ref: list = []
+    conn_ref: list[Any] = []
     stream = MockStreamWithClosedStateOnDisconnect(conn_ref)
 
     async with httpcore.AsyncHTTP2Connection(
@@ -958,7 +958,7 @@ async def test_http2_protocol_error_with_h2_closed_state():
     # Create a mock stream that sets state to CLOSED during write
     # This causes h2 to raise ProtocolError when trying to read the next frame
     class MockStreamWithClosedOnWrite(httpcore.AsyncMockStream):
-        def __init__(self, conn_ref: list) -> None:
+        def __init__(self, conn_ref: list[Any]) -> None:
             self._conn_ref = conn_ref
             self._write_count = 0
             super().__init__([hyperframe.frame.SettingsFrame().serialize()], http2=True)
@@ -973,7 +973,7 @@ async def test_http2_protocol_error_with_h2_closed_state():
                 ]._h2_state.state_machine.state = h2.connection.ConnectionState.CLOSED
                 self._conn_ref[0]._connection_terminated = None
 
-    conn_ref: list = []
+    conn_ref: list[Any] = []
     stream = MockStreamWithClosedOnWrite(conn_ref)
 
     async with httpcore.AsyncHTTP2Connection(
