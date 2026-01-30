@@ -826,3 +826,171 @@ async def test_connection_pool_retries_graceful_shutdown_no_headers_sent():
 
         # Verify the first connection was called twice (retry happened)
         assert pool._mock_connections[0]._calls == 2  # type: ignore[attr-defined]
+
+
+# =============================================================================
+# Tests for edge cases in HTTP/2 GOAWAY handling
+# =============================================================================
+
+
+@pytest.mark.anyio
+async def test_http2_receive_events_with_terminated_connection_no_stream_id():
+    """
+    Test _receive_events when connection is terminated and stream_id is None.
+    This covers line 435 in http2.py - the RemoteProtocolError path.
+
+    This scenario occurs when _receive_events is called without a stream_id
+    (e.g., from _wait_for_outgoing_flow) after the connection has terminated.
+    We test this by directly manipulating the connection state.
+    """
+    import h2.events
+
+    origin = httpcore.Origin(b"https", b"example.com", 443)
+    stream = httpcore.AsyncMockStream(
+        [
+            hyperframe.frame.SettingsFrame().serialize(),
+            # We'll manipulate the connection state after initialization
+        ]
+    )
+    async with httpcore.AsyncHTTP2Connection(
+        origin=origin, stream=stream, keepalive_expiry=5.0
+    ) as conn:
+        # Directly set _connection_terminated to simulate a terminated connection
+        # This mimics the state after receiving a GOAWAY but before cleanup
+        terminated = h2.events.ConnectionTerminated()
+        terminated.error_code = 0
+        terminated.last_stream_id = 0
+        terminated.additional_data = b""
+        conn._connection_terminated = terminated
+
+        # Create a mock request for the _receive_events call
+        request = httpcore.Request(
+            method=b"GET",
+            url=httpcore.URL("https://example.com/"),
+            headers=[(b"host", b"example.com")],
+        )
+
+        # Call _receive_events with stream_id=None to trigger line 435
+        with pytest.raises(httpcore.RemoteProtocolError):
+            await conn._receive_events(request, stream_id=None)
+
+
+@pytest.mark.anyio
+async def test_http2_server_disconnect_with_h2_closed_state():
+    """
+    Test server disconnect when h2 state machine is CLOSED but _connection_terminated
+    is not yet set. This covers line 558 in http2.py.
+
+    This simulates a race condition where h2 has processed GOAWAY internally
+    (transitioning to CLOSED state) but we haven't processed the event yet.
+    """
+    import h2.connection
+
+    origin = httpcore.Origin(b"https", b"example.com", 443)
+
+    # Create a mock stream that sets state to CLOSED BEFORE returning empty data
+    # This simulates the race condition accurately
+    class MockStreamWithClosedStateOnDisconnect(httpcore.AsyncMockStream):
+        def __init__(self, conn_ref: list) -> None:
+            self._conn_ref = conn_ref
+            self._read_count = 0
+            super().__init__([hyperframe.frame.SettingsFrame().serialize()], http2=True)
+
+        async def read(self, max_bytes: int, timeout: float | None = None) -> bytes:
+            self._read_count += 1
+            if self._read_count == 1:
+                # First read returns settings
+                return hyperframe.frame.SettingsFrame().serialize()
+            # Before returning empty (disconnect), set h2 state to CLOSED
+            # This simulates h2 having processed GOAWAY internally
+            if self._conn_ref and self._conn_ref[0]:
+                self._conn_ref[
+                    0
+                ]._h2_state.state_machine.state = h2.connection.ConnectionState.CLOSED
+                self._conn_ref[0]._connection_terminated = None
+            return b""  # Server disconnect
+
+    conn_ref: list = []
+    stream = MockStreamWithClosedStateOnDisconnect(conn_ref)
+
+    async with httpcore.AsyncHTTP2Connection(
+        origin=origin, stream=stream, keepalive_expiry=5.0
+    ) as conn:
+        conn_ref.append(conn)
+
+        # Set up stream tracking for the request
+        conn._stream_requests[1] = {"headers_sent": True, "body_sent": False}
+
+        # Create a mock request
+        request = httpcore.Request(
+            method=b"GET",
+            url=httpcore.URL("https://example.com/"),
+            headers=[(b"host", b"example.com")],
+        )
+
+        # First call consumes the initial settings frame
+        await conn._read_incoming_data(request, stream_id=1)
+
+        # Second call should hit line 558 when mock returns empty data
+        # and sets h2 state to CLOSED
+        with pytest.raises(httpcore.ConnectionGoingAway) as exc_info:
+            await conn._read_incoming_data(request, stream_id=1)
+
+        # Verify the exception has the expected properties
+        assert exc_info.value.request_stream_id == 1
+        assert exc_info.value.error_code == 0  # Assumed graceful
+
+
+@pytest.mark.anyio
+async def test_http2_protocol_error_with_h2_closed_state():
+    """
+    Test h2 ProtocolError when state machine is CLOSED.
+    This covers lines 213-225 in http2.py.
+
+    This simulates the race condition where h2 raises a ProtocolError
+    and the state machine is in CLOSED state, but _connection_terminated
+    is not yet set.
+    """
+    import h2.connection
+
+    origin = httpcore.Origin(b"https", b"example.com", 443)
+
+    # Create a mock stream that sets state to CLOSED during write
+    # This causes h2 to raise ProtocolError when trying to read the next frame
+    class MockStreamWithClosedOnWrite(httpcore.AsyncMockStream):
+        def __init__(self, conn_ref: list) -> None:
+            self._conn_ref = conn_ref
+            self._write_count = 0
+            super().__init__([hyperframe.frame.SettingsFrame().serialize()], http2=True)
+
+        async def write(self, data: bytes, timeout: float | None = None) -> None:
+            self._write_count += 1
+            # After first write (settings ACK), set state to CLOSED
+            # to simulate race condition during request sending
+            if self._write_count > 1 and self._conn_ref and self._conn_ref[0]:
+                self._conn_ref[
+                    0
+                ]._h2_state.state_machine.state = h2.connection.ConnectionState.CLOSED
+                self._conn_ref[0]._connection_terminated = None
+
+    conn_ref: list = []
+    stream = MockStreamWithClosedOnWrite(conn_ref)
+
+    async with httpcore.AsyncHTTP2Connection(
+        origin=origin, stream=stream, keepalive_expiry=5.0
+    ) as conn:
+        conn_ref.append(conn)
+
+        # Use handle_async_request which has the try-except block
+        # The request will fail when h2 raises ProtocolError in CLOSED state
+        with pytest.raises(httpcore.ConnectionGoingAway) as exc_info:
+            await conn.handle_async_request(
+                httpcore.Request(
+                    method=b"GET",
+                    url=httpcore.URL("https://example.com/"),
+                    headers=[(b"host", b"example.com")],
+                )
+            )
+
+        # Verify the exception properties
+        assert exc_info.value.error_code == 0  # Assumed graceful
