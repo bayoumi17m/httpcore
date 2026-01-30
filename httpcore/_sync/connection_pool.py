@@ -242,11 +242,10 @@ class ConnectionPool(RequestInterface):
                         pool_request.request
                     )
                 except ConnectionGoingAway as exc:
-                    # NOTE: This must be caught before ConnectionNotAvailable since
-                    # ConnectionGoingAway is a subclass of ConnectionNotAvailable.
-                    #
                     # GOAWAY frame recieved during request processing.
                     # Determine if we can safely retry based on RFC 7540 semantics.
+                    # NOTE: This must be caught before ConnectionNotAvailable since
+                    # ConnectionGoingAway is a subclass of ConnectionNotAvailable.
                     pool_request.clear_connection()
 
                     if exc.is_safe_to_retry:
