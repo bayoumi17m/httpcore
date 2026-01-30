@@ -994,3 +994,43 @@ def test_http2_protocol_error_with_h2_closed_state():
 
         # Verify the exception properties
         assert exc_info.value.error_code == 0  # Assumed graceful
+
+
+def test_mock_backend_with_retry_exhausted_buffers():
+    """
+    Test the MockBackendWithRetry when more connections are made
+    than buffers provided. This covers the else branch at line 497.
+    """
+    network_backend = MockBackendWithRetry(
+        buffers_by_connection=[
+            # Only one buffer set provided
+            [
+                hyperframe.frame.SettingsFrame().serialize(),
+                hyperframe.frame.GoAwayFrame(
+                    stream_id=0, error_code=0, last_stream_id=0
+                ).serialize(),
+                b"",
+            ],
+        ],
+        http2=True,
+    )
+
+    # First connection uses the buffer
+    stream1 = network_backend.connect_tcp("example.com", 443)
+    assert stream1 is not None
+
+    # Second connection should hit the else branch (empty buffer)
+    stream2 = network_backend.connect_tcp("example.com", 443)
+    assert stream2 is not None
+
+
+def test_mock_connection_graceful_goaway_info():
+    """
+    Test the info() method of MockConnectionGracefulGoaway.
+    This covers line 795.
+    """
+    origin = httpcore.Origin(b"https", b"example.com", 443)
+    mock_conn = MockConnectionGracefulGoaway(origin)
+
+    # Verify the info method returns the expected string
+    assert mock_conn.info() == "MockConnectionGracefulGoaway"
